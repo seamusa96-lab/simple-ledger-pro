@@ -1,0 +1,9 @@
+beancount>=3.1,<4
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.9
+pydantic>=2.7,<3
+reportlab>=4.0,<5
+pytest>=8
+httpx>=0.27
+ruff>=0.5
