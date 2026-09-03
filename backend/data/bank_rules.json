@@ -1,0 +1,87 @@
+[
+  {
+    "pattern": "SHELL|PETRO-?CAN|ESSO|HUSKY|PIONEER|ULTRAMAR|407ETR",
+    "account": "Expenses:MotorVehicle",
+    "hst": true
+  },
+  {
+    "pattern": "BELL CANADA|ROGERS|TELUS|FREEDOM MOBILE|FIDO|KOODO|STARLINK",
+    "account": "Expenses:Telephone",
+    "hst": true
+  },
+  {
+    "pattern": "HYDRO ONE|TORONTO HYDRO|ALECTRA|ENBRIDGE|UNION GAS",
+    "account": "Expenses:Utilities",
+    "hst": true
+  },
+  {
+    "pattern": "STAPLES|BUREAU EN GROS|AMAZON|AMZN|BEST BUY|IKEA|SHOPPERS DRUG MART",
+    "account": "Expenses:OfficeSupplies",
+    "hst": true
+  },
+  {
+    "pattern": "GOOGLE|MICROSOFT|ADOBE|ZOOM|SHOPIFY|QUICKBOOKS|INTUIT|DROPBOX|GITHUB|OPENAI|CHATGPT|REPLIT|NEST",
+    "account": "Expenses:Software",
+    "hst": true
+  },
+  {
+    "pattern": "TIM HORTONS|STARBUCKS|RESTAURANT|UBER EATS|SKIP|TANDOORI|FLAME|KEG|CHOP|CACTUS|SCADDABUSH|ALOETTE|CELADON|FORTUNATE FOX|SUKHO THAI|TST|ESSO|YOKAI|IZAKAYA|RAINBOW|PURE SPIRITS|DUDAS TAVERN|EJJI|LCBO",
+    "account": "Expenses:MealsEntertainment",
+    "hst": true
+  },
+  {
+    "pattern": "MONTHLY FEE|SERVICE CHARGE|ACCOUNT FEE|NSF|OVERDRAFT|INTEREST CHARGE",
+    "account": "Expenses:InterestBankCharges",
+    "hst": false
+  },
+  {
+    "pattern": "INTEREST (PAID|CREDIT|EARNED)",
+    "account": "Income:Other:Interest",
+    "hst": false
+  },
+  {
+    "pattern": "INTACT|AVIVA|DESJARDINS INS|CO-?OPERATORS|INSURANCE",
+    "account": "Expenses:Insurance",
+    "hst": false
+  },
+  {
+    "pattern": "CRA .*GST|CANADA REVENUE.*GST|GST/HST|RC0001",
+    "account": "Liabilities:HST:Instalments",
+    "hst": false
+  },
+  {
+    "pattern": "CRA .*PAYROLL|RP0001|SOURCE DED",
+    "account": "Liabilities:Current:PayrollDeductions:IncomeTax",
+    "hst": false
+  },
+  {
+    "pattern": "CRA .*CORP|RC0001 CORP|T2 ",
+    "account": "Liabilities:Current:CorporateTaxPayable",
+    "hst": false
+  },
+  {
+    "pattern": "WSIB",
+    "account": "Liabilities:Current:WSIB",
+    "hst": false
+  },
+  {
+    "pattern": "UBER|LYFT|VIA RAIL|AIR CANADA|WESTJET|PORTER|HOTEL|MARRIOTT|HILTON|ONROUTE",
+    "account": "Expenses:Travel",
+    "hst": true
+  },
+  {
+    "pattern": "RENT|PROPERTY MGMT",
+    "account": "Expenses:Rent",
+    "hst": true
+  },
+  {
+    "pattern": "PAYMENT THANK YOU|PAIEMENT MERCI|CREDIT CARD PAYMENT",
+    "account": "Liabilities:Current:CreditCard",
+    "hst": false
+  },
+  {
+    "pattern": "COSTCO|CINEPLEX",
+    "account": "Expenses:Other",
+    "hst": true
+  }
+]
