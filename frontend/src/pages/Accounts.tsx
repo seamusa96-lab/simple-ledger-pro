@@ -5,7 +5,7 @@ import { useAsync } from '../useAsync'
 
 export function AccountsPage() {
   const { data, error, reload } = useAsync(api.accounts)
-  const [form, setForm] = useState({ name: '', code: '', description: '' })
+  const [form, setForm] = useState({ name: '', code: '', description: '', gifi: '', t2125_line: '', hst_treatment: '' })
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [typeFilter, setTypeFilter] = useState('')
 
@@ -14,7 +14,7 @@ export function AccountsPage() {
     try {
       await api.createAccount(form)
       setMsg({ kind: 'ok', text: `Opened ${form.name}` })
-      setForm({ name: '', code: '', description: '' })
+      setForm({ name: '', code: '', description: '', gifi: '', t2125_line: '', hst_treatment: '' })
       reload()
     } catch (err) {
       setMsg({ kind: 'error', text: String((err as Error).message) })
@@ -52,7 +52,27 @@ export function AccountsPage() {
             <label>Description</label>
             <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
+        </div>
+        <div className="row" style={{ marginTop: 10 }}>
+          <div>
+            <label>GIFI</label>
+            <input value={form.gifi} onChange={(e) => setForm({ ...form, gifi: e.target.value })} placeholder="8810" />
+          </div>
+          <div>
+            <label>T2125 line</label>
+            <input value={form.t2125_line} onChange={(e) => setForm({ ...form, t2125_line: e.target.value })} placeholder="8810" />
+          </div>
+          <div>
+            <label>HST treatment</label>
+            <select value={form.hst_treatment} onChange={(e) => setForm({ ...form, hst_treatment: e.target.value })}>
+              <option value="">Not set</option>
+              {['taxable', 'exempt', 'zero-rated', 'n/a'].map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
           <div className="shrink">
+            <label>&nbsp;</label>
             <button className="btn" type="submit">Open account</button>
           </div>
         </div>

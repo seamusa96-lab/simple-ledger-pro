@@ -99,7 +99,7 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   dashboard: () => request<Dashboard>('/api/dashboard'),
   accounts: () => request<Account[]>('/api/accounts'),
-  createAccount: (b: { name: string; code: string; description: string }) =>
+  createAccount: (b: { name: string; code: string; description: string; gifi: string; t2125_line: string; hst_treatment: string }) =>
     request('/api/accounts', { method: 'POST', body: JSON.stringify(b) }),
   transactions: (params: Record<string, string> = {}) =>
     request<Transaction[]>('/api/transactions?' + new URLSearchParams(params)),
