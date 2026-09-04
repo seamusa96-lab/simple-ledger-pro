@@ -334,7 +334,7 @@ def reconcile(ledger: Ledger, bank_account: str, statement_id: str) -> dict:
         "ledger_balance_at_period_end": str(ledger_balance),
         "statement_closing_balance": str(closing) if closing is not None else None,
         "difference": str(q(ledger_balance - closing)) if closing is not None else None,
-        "reconciled": closing is not None and ledger_balance == closing and not unmatched_statement,
+        "reconciled": closing is not None and ledger_balance == closing and not unmatched_statement and not unmatched_ledger,
         "matched": matched,
         "unmatched_statement_lines": unmatched_statement,
         "unmatched_ledger_entries": unmatched_ledger,
