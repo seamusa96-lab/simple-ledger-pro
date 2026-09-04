@@ -35,6 +35,16 @@ def test_hst_split_sums_to_gross():
     assert parts[1]["amount"] == Decimal("13.00")
 
 
+def test_hst_split_meals_half_itc():
+    # Meals & entertainment: only 50% of the HST is a recoverable ITC; the
+    # non-creditable half stays on the expense and postings still sum to gross.
+    parts = hst_split("Expenses:MealsEntertainment", Decimal("113.00"))
+    by_acct = {p["account"]: p["amount"] for p in parts}
+    assert by_acct["Liabilities:HST:ITC"] == Decimal("6.50")
+    assert by_acct["Expenses:MealsEntertainment"] == Decimal("106.50")
+    assert sum(p["amount"] for p in parts) == Decimal("113.00")
+
+
 def test_parse_amount_formats():
     assert parse_amount("$1,234.56") == Decimal("1234.56")
     assert parse_amount("(50.00)") == Decimal("-50.00")

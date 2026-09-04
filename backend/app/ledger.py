@@ -160,9 +160,39 @@ class Ledger:
         source: str = "manual",
         flag: str = "*",
     ) -> dict:
-        entry = self._build_transaction(txn_date, narration, postings, payee, tags, links, meta, created_by, source, flag)
-        self._append(printer.format_entry(entry))
-        return self.get_transaction(entry.meta["id"])
+        with self._lock:
+            entry = self._build_transaction(txn_date, narration, postings, payee, tags, links, meta, created_by, source, flag)
+            self._append(printer.format_entry(entry))
+            return self.get_transaction(entry.meta["id"])
+
+    def add_transactions(self, specs: list[dict]) -> list[dict]:
+        """Append several transactions in one atomic, validated commit.
+
+        Every spec is built and the whole batch is written and re-validated once, so
+        either all entries persist or none do. Holding the lock across build+commit
+        also prevents concurrent writers from interleaving or discarding entries.
+        Each spec is a kwargs dict for :meth:`_build_transaction` (without ``self``).
+        """
+        with self._lock:
+            entries = [
+                self._build_transaction(
+                    s["txn_date"],
+                    s["narration"],
+                    s["postings"],
+                    s.get("payee"),
+                    s.get("tags"),
+                    s.get("links"),
+                    s.get("meta"),
+                    s.get("created_by", "api"),
+                    s.get("source", "manual"),
+                    s.get("flag", "*"),
+                )
+                for s in specs
+            ]
+            if not entries:
+                return []
+            self._append("\n\n".join(printer.format_entry(e) for e in entries))
+            return [self.get_transaction(e.meta["id"]) for e in entries]
 
     def _build_transaction(
         self,
@@ -221,23 +251,28 @@ class Ledger:
         return entry
 
     def void_transaction(self, txn_id: str, reason: str, created_by: str = "api") -> dict:
-        """Audit-safe reversal: never edit history, post the mirror entry."""
-        original = self.get_transaction(txn_id)
-        if original is None:
-            raise LedgerError(f"Transaction {txn_id} not found")
-        if any(t["meta"].get("reverses") == txn_id for t in self.transactions()):
-            raise LedgerError("Transaction already voided")
-        reversal = self.add_transaction(
-            date.today(),
-            f"REVERSAL of {txn_id}: {reason}",
-            [{"account": p["account"], "amount": -Decimal(p["amount"])} for p in original["postings"]],
-            payee=original.get("payee"),
-            links=[f"void-{txn_id}"],
-            meta={"reverses": txn_id},
-            created_by=created_by,
-            source="reversal",
-        )
-        return reversal
+        """Audit-safe reversal: never edit history, post the mirror entry.
+
+        The already-voided check and the reversal write happen under one lock so two
+        concurrent voids cannot both pass the check and post duplicate reversals.
+        """
+        with self._lock:
+            original = self.get_transaction(txn_id)
+            if original is None:
+                raise LedgerError(f"Transaction {txn_id} not found")
+            if any(t["meta"].get("reverses") == txn_id for t in self.transactions()):
+                raise LedgerError("Transaction already voided")
+            reversal = self.add_transaction(
+                date.today(),
+                f"REVERSAL of {txn_id}: {reason}",
+                [{"account": p["account"], "amount": -Decimal(p["amount"])} for p in original["postings"]],
+                payee=original.get("payee"),
+                links=[f"void-{txn_id}"],
+                meta={"reverses": txn_id},
+                created_by=created_by,
+                source="reversal",
+            )
+            return reversal
 
     def revise_pending(self, txn_id: str, postings: list[dict], narration: str | None = None, payee: str | None = None, created_by: str = "api") -> dict:
         """Replace a *pending* ('!') entry in place, e.g. to categorize a bank import.
@@ -245,20 +280,20 @@ class Ledger:
         Cleared ('*') entries are immutable; use ``void_transaction`` instead.
         The original audit fields are carried forward and ``revised_at`` is stamped.
         """
-        entries, _, _ = self.load()
-        target = next((e for e in entries if isinstance(e, data.Transaction) and e.meta.get("id") == txn_id), None)
-        if target is None:
-            raise LedgerError(f"Transaction {txn_id} not found")
-        if target.flag != "!":
-            raise LedgerError("Only pending ('!') entries may be revised; post a reversal for cleared entries.")
-        if Path(target.meta["filename"]).resolve() != self.path.resolve():
-            raise LedgerError("Entry does not live in the main journal")
-        carried = {k: str(v) for k, v in target.meta.items() if k not in ("filename", "lineno", "id", "created_at", "created_by", "source", "__tolerances__")}
-        carried["revised_at"] = _now_iso()
-        carried["revised_by"] = created_by
-        carried["original_created_at"] = str(target.meta.get("created_at", ""))
-        carried["original_created_by"] = str(target.meta.get("created_by", ""))
         with self._lock:
+            entries, _, _ = self.load()
+            target = next((e for e in entries if isinstance(e, data.Transaction) and e.meta.get("id") == txn_id), None)
+            if target is None:
+                raise LedgerError(f"Transaction {txn_id} not found")
+            if target.flag != "!":
+                raise LedgerError("Only pending ('!') entries may be revised; post a reversal for cleared entries.")
+            if Path(target.meta["filename"]).resolve() != self.path.resolve():
+                raise LedgerError("Entry does not live in the main journal")
+            carried = {k: str(v) for k, v in target.meta.items() if k not in ("filename", "lineno", "id", "created_at", "created_by", "source", "__tolerances__")}
+            carried["revised_at"] = _now_iso()
+            carried["revised_by"] = created_by
+            carried["original_created_at"] = str(target.meta.get("created_at", ""))
+            carried["original_created_by"] = str(target.meta.get("created_by", ""))
             lines = self.raw_text().splitlines(keepends=True)
             start = target.meta["lineno"] - 1
             end = start + 1

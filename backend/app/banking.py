@@ -155,32 +155,70 @@ def parse_statement_csv(text: str) -> list[StatementLine]:
             ref = r[i_ref].strip() if i_ref is not None and i_ref < len(r) else ""
             lines.append(StatementLine(d, desc, q(amt), q(bal) if bal is not None else None, ref))
     else:
-        # Header-less positional exports (TD, CIBC, Scotiabank): date, desc, debit, credit[, balance]
-        # or Scotiabank style: date, amount, *, description
-        for r in rows:
-            d = parse_date(r[0])
-            if d is None or len(r) < 2:
-                continue
-            nums = [(i, parse_amount(c)) for i, c in enumerate(r[1:], start=1)]
-            numeric = [(i, v) for i, v in nums if v is not None and not re.search(r"[A-Za-z]{3,}", r[i])]
-            texts = [r[i].strip() for i in range(1, len(r)) if r[i].strip() and (i, parse_amount(r[i])) not in numeric]
-            desc = " ".join(texts) or "Bank transaction"
-            if len(numeric) >= 3:
-                (_, deb), (_, cre), (_, bal) = numeric[0], numeric[1], numeric[2]
-                amt = (cre or Decimal(0)) - abs(deb or Decimal(0))
-            elif len(numeric) == 2:
-                (_, a), (_, b) = numeric
-                # TD/CIBC leave one of debit/credit empty; two numbers means debit+credit with one zero, or amount+balance
-                if a == 0 or b == 0:
-                    amt, bal = (b if a == 0 else -abs(a)), None
-                else:
-                    amt, bal = a, b
-            elif len(numeric) == 1:
-                amt, bal = numeric[0][1], None
-            else:
-                continue
-            lines.append(StatementLine(d, desc, q(amt), q(bal) if bal is not None else None))
+        lines = _parse_positional(rows)
     lines.sort(key=lambda ln: ln.date)
+    return lines
+
+
+def _is_numeric_cell(cell: str) -> bool:
+    """True if the cell is a parseable amount and not free text (e.g. a description)."""
+    return parse_amount(cell) is not None and not re.search(r"[A-Za-z]{3,}", cell)
+
+
+def _parse_positional(rows: list[list[str]]) -> list[StatementLine]:
+    """Parse header-less positional exports (TD, CIBC, Scotiabank).
+
+    The column layout is decided once for the whole file from which columns hold
+    amounts, rather than per row, so a blank debit/credit cell does not change the
+    interpretation of the remaining cells. Supported layouts (column 0 is the date):
+
+      * date, description, debit, credit[, balance]  (TD/CIBC: one of debit/credit blank)
+      * date, amount[, balance], description          (Scotiabank)
+      * date, description, amount[, balance]
+
+    Sign convention: a debit (withdrawal) is negative, a credit (deposit) positive.
+    """
+    dated = [r for r in rows if parse_date(r[0]) is not None and len(r) >= 2]
+    if not dated:
+        return []
+    width = max(len(r) for r in dated)
+    # A column is "numeric" only if every non-empty cell in it is an amount.
+    numeric_cols: list[int] = []
+    for c in range(1, width):
+        cells = [r[c] for r in dated if c < len(r) and r[c].strip()]
+        if cells and all(_is_numeric_cell(cell) for cell in cells):
+            numeric_cols.append(c)
+
+    lines: list[StatementLine] = []
+    for r in dated:
+        d = parse_date(r[0])
+        assert d is not None
+        cols = {c: parse_amount(r[c]) for c in numeric_cols if c < len(r) and r[c].strip()}
+        text_cols = [r[c].strip() for c in range(1, len(r)) if c not in numeric_cols and r[c].strip()]
+        desc = " ".join(text_cols) or "Bank transaction"
+        amt: Decimal | None = None
+        bal: Decimal | None = None
+        if len(numeric_cols) >= 3:
+            # date, ..., debit, credit, balance  (positions fixed for the file)
+            deb, cre, b = numeric_cols[0], numeric_cols[1], numeric_cols[2]
+            amt = (cols.get(cre) or Decimal(0)) - abs(cols.get(deb) or Decimal(0))
+            bal = cols.get(b)
+        elif len(numeric_cols) == 2:
+            # date, debit, credit  (TD/CIBC: exactly one populated per row) OR
+            # date, amount, balance. Distinguish by whether one debit/credit column
+            # is consistently blank across the file when the other is populated.
+            a_col, b_col = numeric_cols
+            va, vb = cols.get(a_col), cols.get(b_col)
+            if va is not None and vb is not None:
+                amt, bal = va, vb  # amount + balance, both always present
+            else:
+                # one column blank this row: it's a debit(neg)/credit(pos) pair
+                amt = vb if va is None else -abs(va)
+        elif len(numeric_cols) == 1:
+            amt = cols.get(numeric_cols[0])
+        if amt is None:
+            continue
+        lines.append(StatementLine(d, desc, q(amt), q(bal) if bal is not None else None))
     return lines
 
 
@@ -213,11 +251,15 @@ def import_statement(ledger: Ledger, bank_account: str, filename: str, content: 
     lines = parse_statement_csv(content.decode("utf-8-sig", errors="replace"))
     if not lines:
         raise LedgerError("No transactions could be parsed from the file")
-    stored_name, stored_path = store_statement(bank_account, filename, content)
     rules = load_rules()
     existing = ledger.import_ids()
     hst_by_account = {a["name"]: a["hst_treatment"] for a in ledger.open_accounts()}
-    imported, skipped, categorized = [], 0, 0
+    # Store the original file first so the transactions can reference its final
+    # on-disk name, then commit the ledger entries atomically. If the commit fails
+    # (e.g. an invalid line), delete the file so no partial import is left behind.
+    stored_name, stored_path = store_statement(bank_account, filename, content)
+    specs: list[dict] = []
+    skipped, categorized = 0, 0
     seen: dict[str, int] = {}
     for ln in lines:
         key = f"{bank_account}|{ln.date}|{ln.description}|{ln.amount}"
@@ -248,8 +290,24 @@ def import_statement(ledger: Ledger, bank_account: str, filename: str, content: 
             meta["reference"] = ln.reference
         if ln.balance is not None:
             meta["statement_balance"] = str(ln.balance)
-        t = ledger.add_transaction(ln.date, ln.description, postings, payee=None, meta=meta, created_by=created_by, source="bank-import", flag=flag)
-        imported.append(t["id"])
+        specs.append(
+            {
+                "txn_date": ln.date,
+                "narration": ln.description,
+                "postings": postings,
+                "payee": None,
+                "meta": meta,
+                "created_by": created_by,
+                "source": "bank-import",
+                "flag": flag,
+            }
+        )
+
+    try:
+        imported = [t["id"] for t in ledger.add_transactions(specs)]
+    except Exception:
+        stored_path.unlink(missing_ok=True)
+        raise
     summary = {
         "id": stored_name,
         "bank_account": bank_account,
@@ -270,14 +328,25 @@ def import_statement(ledger: Ledger, bank_account: str, filename: str, content: 
     return summary
 
 
+# Accounts for which only 50% of the HST is a recoverable input tax credit
+# (CRA: meals & entertainment). The non-creditable half stays on the expense.
+HALF_ITC_ACCOUNTS = frozenset({"Expenses:MealsEntertainment"})
+
+
 def hst_split(expense_account: str, gross: Decimal, rate: Decimal = Decimal(ONTARIO_HST_RATE), itc_account: str = "Liabilities:HST:ITC") -> list[dict]:
-    """Split a tax-inclusive amount into net expense + ITC. Rounding lands on the expense line."""
+    """Split a tax-inclusive amount into net expense + ITC. Rounding lands on the expense line.
+
+    For meals & entertainment only 50% of the HST is claimable as an ITC (CRA); the
+    non-creditable half is added back to the expense so the postings still sum to gross.
+    """
     gross = q(gross)
     net = q(gross / (1 + rate))
     hst = q(gross - net)
-    out = [{"account": expense_account, "amount": net}]
-    if hst != 0:
-        out.append({"account": itc_account, "amount": hst})
+    itc = q(hst / 2) if expense_account in HALF_ITC_ACCOUNTS else hst
+    expense = q(gross - itc)
+    out = [{"account": expense_account, "amount": expense}]
+    if itc != 0:
+        out.append({"account": itc_account, "amount": itc})
     return out
 
 
