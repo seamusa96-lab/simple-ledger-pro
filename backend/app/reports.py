@@ -98,7 +98,7 @@ def hst_return(ledger: Ledger, start: date, end: date) -> dict:
     Line 113/114/115: balance / refund / payment
     """
     bal = ledger.balances(start=start, end=end)
-    sales = -_sum(bal, "Income:Sales")
+    sales = -_sum(bal, "Income")
     collected = -_sum(bal, "Liabilities:HST:Collected")
     itc = _sum(bal, "Liabilities:HST:ITC")
     instalments = _sum(bal, "Liabilities:HST:Instalments")

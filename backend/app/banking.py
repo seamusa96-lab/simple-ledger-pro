@@ -44,7 +44,7 @@ DEFAULT_RULES = [
     {"pattern": r"MONTHLY FEE|SERVICE CHARGE|ACCOUNT FEE|NSF|OVERDRAFT|INTEREST CHARGE", "account": "Expenses:InterestBankCharges", "hst": False},
     {"pattern": r"INTEREST (PAID|CREDIT|EARNED)", "account": "Income:Other:Interest", "hst": False},
     {"pattern": r"INTACT|AVIVA|DESJARDINS INS|CO-?OPERATORS|INSURANCE", "account": "Expenses:Insurance", "hst": False},
-    {"pattern": r"CRA .*GST|CANADA REVENUE.*GST|GST/HST|RC0001", "account": "Liabilities:HST:Instalments", "hst": False},
+    {"pattern": r"CRA .*GST|CANADA REVENUE.*GST|GST/HST", "account": "Liabilities:HST:Instalments", "hst": False},
     {"pattern": r"CRA .*PAYROLL|RP0001|SOURCE DED", "account": "Liabilities:Current:PayrollDeductions:IncomeTax", "hst": False},
     {"pattern": r"CRA .*CORP|RC0001 CORP|T2 ", "account": "Liabilities:Current:CorporateTaxPayable", "hst": False},
     {"pattern": r"WSIB", "account": "Liabilities:Current:WSIB", "hst": False},

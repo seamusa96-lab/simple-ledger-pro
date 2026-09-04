@@ -45,7 +45,7 @@
     "hst": false
   },
   {
-    "pattern": "CRA .*GST|CANADA REVENUE.*GST|GST/HST|RC0001",
+    "pattern": "CRA .*GST|CANADA REVENUE.*GST|GST/HST",
     "account": "Liabilities:HST:Instalments",
     "hst": false
   },
