@@ -82,6 +82,9 @@ class AccountIn(BaseModel):
     name: str
     code: str = ""
     description: str = ""
+    gifi: str = ""
+    t2125_line: str = ""
+    hst_treatment: str = ""
 
 
 class RuleIn(BaseModel):
@@ -121,7 +124,7 @@ def list_accounts(ledger: Ledger = Depends(ledger_dep)):
 
 @app.post("/api/accounts", status_code=201)
 def create_account(body: AccountIn, ledger: Ledger = Depends(ledger_dep)):
-    return ledger.add_account(body.name, body.code, body.description)
+    return ledger.add_account(body.name, body.code, body.description, body.gifi, body.t2125_line, body.hst_treatment)
 
 
 @app.get("/api/accounts/export")

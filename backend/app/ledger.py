@@ -111,7 +111,16 @@ class Ledger:
     def account_names(self) -> set[str]:
         return {a["name"] for a in self.open_accounts() if not a["closed"]}
 
-    def add_account(self, name: str, code: str = "", description: str = "", open_date: date | None = None) -> dict:
+    def add_account(
+        self,
+        name: str,
+        code: str = "",
+        description: str = "",
+        gifi: str = "",
+        t2125_line: str = "",
+        hst_treatment: str = "",
+        open_date: date | None = None,
+    ) -> dict:
         root = name.split(":")[0]
         if root not in ROOT_TYPES:
             raise LedgerError(f"Account must start with one of {ROOT_TYPES}")
@@ -120,14 +129,22 @@ class Ledger:
         for part in name.split(":"):
             if not part or not (part[0].isupper() or part[0].isdigit()):
                 raise LedgerError("Each account component must start with an uppercase letter or digit")
+        if hst_treatment and hst_treatment not in ("taxable", "exempt", "zero-rated", "n/a"):
+            raise LedgerError("hst_treatment must be one of taxable, exempt, zero-rated, n/a")
         meta = data.new_metadata("<api>", 0)
         if code:
             meta["code"] = code
         if description:
             meta["description"] = description
+        if gifi:
+            meta["gifi"] = gifi
+        if t2125_line:
+            meta["t2125_line"] = t2125_line
+        if hst_treatment:
+            meta["hst"] = hst_treatment
         entry = data.Open(meta, open_date or coa.OPEN_DATE, name, [CURRENCY], None)
         self._append(printer.format_entry(entry), target=self.coa_path)
-        return {"name": name, "code": code, "description": description}
+        return {"name": name, "code": code, "description": description, "gifi": gifi, "t2125_line": t2125_line, "hst_treatment": hst_treatment}
 
     # ---------------------------------------------------------- transactions
     def add_transaction(
