@@ -165,6 +165,55 @@ class Ledger:
             self._append(printer.format_entry(entry))
             return self.get_transaction(entry.meta["id"])
 
+    def find_similar(self, txn_date: date, narration: str, amount: Decimal) -> list[dict]:
+        """Possible duplicates: same date, same narration, same magnitude.
+
+        Magnitude is the entry's total debits (== total credits, since it balances),
+        so the comparison is independent of posting order. This is advisory only -
+        callers surface it as a warning and let the user decide whether to post.
+        """
+        want = q(abs(amount))
+        out = []
+        for t in self.transactions(start=txn_date, end=txn_date):
+            if t["narration"].strip().casefold() != narration.strip().casefold():
+                continue
+            debits = q(sum((Decimal(p["amount"]) for p in t["postings"] if Decimal(p["amount"]) > 0), Decimal("0")))
+            if debits == want:
+                out.append(t)
+        return out
+
+    def suggest_account(self, narration: str) -> dict | None:
+        """Suggest the account most often used before for this exact narration.
+
+        Keeps coding consistent: the same description maps to the same account (and
+        therefore the same CoA code / GIFI / T2125 line). Bank/cash/uncategorized
+        legs are ignored so the suggestion is the expense or income side. Returns the
+        account with its metadata, or None if the description has not been seen.
+        """
+        key = narration.strip().casefold()
+        if not key:
+            return None
+        counts: dict[str, int] = defaultdict(int)
+        for t in self.transactions():
+            if t["narration"].strip().casefold() != key:
+                continue
+            for p in t["postings"]:
+                acct = p["account"]
+                root = acct.split(":")[0]
+                if root in ("Income", "Expenses") and not acct.endswith(":Uncategorized"):
+                    counts[acct] += 1
+        if not counts:
+            return None
+        best = max(counts, key=lambda a: (counts[a], a))
+        meta = next((a for a in self.open_accounts() if a["name"] == best), None)
+        return {
+            "account": best,
+            "count": counts[best],
+            "code": (meta or {}).get("code", ""),
+            "gifi": (meta or {}).get("gifi", ""),
+            "t2125_line": (meta or {}).get("t2125_line", ""),
+        }
+
     def add_transactions(self, specs: list[dict]) -> list[dict]:
         """Append several transactions in one atomic, validated commit.
 

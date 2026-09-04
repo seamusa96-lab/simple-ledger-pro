@@ -30,6 +30,10 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
 
+# Apply the key gate to every route. It is a no-op unless SLP_API_KEY is set.
+app.router.dependencies.append(Depends(require_api_key))
+
+
 def ledger_dep() -> Ledger:
     return get_ledger()
 
@@ -169,6 +173,20 @@ def create_transaction(body: TransactionIn, ledger: Ledger = Depends(ledger_dep)
     return ledger.add_transaction(
         body.date, body.narration, [p.model_dump() for p in body.postings], body.payee, body.tags, body.links, body.meta, created_by=user, flag=body.flag
     )
+
+
+# NOTE: these static sub-paths must be declared before "/api/transactions/{txn_id}"
+# so FastAPI does not match "similar"/"suggest-account" as a transaction id.
+@app.get("/api/transactions/similar")
+def similar_transactions(date: date, amount: str, narration: str, ledger: Ledger = Depends(ledger_dep)):
+    """Possible duplicates for an entry the user is about to post (advisory)."""
+    return ledger.find_similar(date, narration, _dec(amount))
+
+
+@app.get("/api/transactions/suggest-account")
+def suggest_account(narration: str, ledger: Ledger = Depends(ledger_dep)):
+    """Account previously used for this description, for consistent coding."""
+    return ledger.suggest_account(narration)
 
 
 @app.get("/api/transactions/{txn_id}")

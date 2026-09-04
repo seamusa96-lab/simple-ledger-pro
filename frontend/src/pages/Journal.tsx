@@ -1,29 +1,11 @@
 import { useMemo, useState } from 'react'
 import { api, money, today, type Transaction } from '../api'
 import { AccountSelect, Alert, DownloadLink, Flag } from '../components'
+import { centsToStr, toCents } from '../money'
 import { useAsync } from '../useAsync'
 
 type Line = { account: string; debit: string; credit: string }
 const blank = (): Line => ({ account: '', debit: '', credit: '' })
-
-// Parse a money string to integer cents exactly, without going through the
-// floating-point Number type (which loses precision past 2^53 cents / rounds
-// values like 0.1). Returns 0 for blank/invalid input.
-const toCents = (s: string): bigint => {
-  const m = s.trim().match(/^-?\d*(?:\.\d{0,})?$/)
-  if (!m || s.trim() === '' || s.trim() === '-') return 0n
-  const neg = s.trim().startsWith('-')
-  const [whole, frac = ''] = s.trim().replace('-', '').split('.')
-  const cents = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2).padEnd(2, '0'))
-  return neg ? -cents : cents
-}
-
-// Render integer cents back to a fixed 2-decimal string for the API / display.
-const centsToStr = (c: bigint): string => {
-  const neg = c < 0n
-  const abs = neg ? -c : c
-  return `${neg ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`
-}
 
 export function JournalPage() {
   const accounts = useAsync(api.accounts)
@@ -38,6 +20,7 @@ export function JournalPage() {
   const [catTarget, setCatTarget] = useState<Transaction | null>(null)
   const [catAccount, setCatAccount] = useState('')
   const [catHst, setCatHst] = useState(true)
+  const [suggestion, setSuggestion] = useState<{ account: string; count: number } | null>(null)
 
   const totals = useMemo(() => {
     const d = lines.reduce((s, l) => s + toCents(l.debit), 0n)
@@ -47,9 +30,40 @@ export function JournalPage() {
 
   const setLine = (i: number, patch: Partial<Line>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)))
 
+  // Suggest a consistent account for a description already used before, so the
+  // same narration lands on the same CoA code / GIFI. Only fills an empty first line.
+  const fetchSuggestion = async () => {
+    if (!narration.trim()) {
+      setSuggestion(null)
+      return
+    }
+    try {
+      const s = await api.suggestAccount(narration)
+      setSuggestion(s ? { account: s.account, count: s.count } : null)
+    } catch {
+      setSuggestion(null)
+    }
+  }
+
+  const applySuggestion = () => {
+    if (!suggestion) return
+    const i = lines.findIndex((l) => !l.account)
+    if (i >= 0) setLine(i, { account: suggestion.account })
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      // Advisory duplicate check: same date + description + magnitude. Non-blocking -
+      // the user decides whether to post anyway (legitimate identical entries exist).
+      const dupes = await api.similarTransactions(date, totals.d, narration)
+      if (dupes.length > 0) {
+        const ok = window.confirm(
+          `A transaction with the same date (${date}), amount (${money(totals.d)}) and description already exists ` +
+            `(${dupes.length} match${dupes.length > 1 ? 'es' : ''}, e.g. ${dupes[0].id}).\n\nThis may be a duplicate. Post it anyway?`,
+        )
+        if (!ok) return
+      }
       await api.createTransaction({
         date,
         payee: payee || null,
@@ -62,6 +76,7 @@ export function JournalPage() {
       setPayee('')
       setNarration('')
       setLines([blank(), blank()])
+      setSuggestion(null)
       txns.reload()
     } catch (err) {
       setMsg({ kind: 'error', text: (err as Error).message })
@@ -108,8 +123,14 @@ export function JournalPage() {
         <div className="row">
           <div><label>Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
           <div><label>Payee</label><input value={payee} onChange={(e) => setPayee(e.target.value)} /></div>
-          <div className="grow"><label>Description</label><input value={narration} onChange={(e) => setNarration(e.target.value)} required /></div>
+          <div className="grow"><label>Description</label><input value={narration} onChange={(e) => setNarration(e.target.value)} onBlur={fetchSuggestion} required /></div>
         </div>
+        {suggestion && !lines.some((l) => l.account === suggestion.account) && (
+          <Alert kind="info">
+            This description was previously coded to <strong>{suggestion.account}</strong> ({suggestion.count}×).{' '}
+            <button type="button" className="btn secondary small" onClick={applySuggestion}>Use {suggestion.account}</button>
+          </Alert>
+        )}
         <div className="postings" style={{ marginTop: 12 }}>
           {lines.map((l, i) => (
             <div className="row" key={i}>

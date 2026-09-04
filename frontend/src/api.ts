@@ -104,6 +104,12 @@ export const api = {
   transactions: (params: Record<string, string> = {}) =>
     request<Transaction[]>('/api/transactions?' + new URLSearchParams(params)),
   createTransaction: (b: unknown) => request<Transaction>('/api/transactions', { method: 'POST', body: JSON.stringify(b) }),
+  similarTransactions: (date: string, amount: string, narration: string) =>
+    request<Transaction[]>('/api/transactions/similar?' + new URLSearchParams({ date, amount, narration })),
+  suggestAccount: (narration: string) =>
+    request<{ account: string; count: number; code: string; gifi: string; t2125_line: string } | null>(
+      '/api/transactions/suggest-account?' + new URLSearchParams({ narration }),
+    ),
   voidTransaction: (id: string, reason: string) =>
     request<Transaction>(`/api/transactions/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
   categorize: (id: string, account: string, hst: boolean) => {
