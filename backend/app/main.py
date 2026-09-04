@@ -12,14 +12,22 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from . import banking, coa, receipts, reports
-from .config import CURRENCY, ONTARIO_HST_RATE, STATEMENTS_DIR
+from .config import API_KEY, CORS_ORIGINS, CURRENCY, ONTARIO_HST_RATE, STATEMENTS_DIR
 from .ledger import Ledger, LedgerError, get_ledger
 from .pdf import table_pdf
 
 app = FastAPI(
     title="Simple Ledger Pro", version="0.1.0", description="Beancount double-entry accounting for Ontario small businesses (CPA Canada / CRA conventions)."
 )
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# CORS is restricted to an explicit allow-list (see SLP_CORS_ORIGINS); credentials
+# are allowed so the front end can be served from a different origin under a key.
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """When SLP_API_KEY is configured, reject requests without a matching key."""
+    if API_KEY is not None and x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
 
 def ledger_dep() -> Ledger:

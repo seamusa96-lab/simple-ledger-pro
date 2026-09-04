@@ -197,6 +197,29 @@ def test_receipt_creates_document_and_entry(seeded):
     assert seeded.get("/api/health").json()["ledger_errors"] == []
 
 
+def test_receipt_meals_half_itc(seeded):
+    # Meals receipt: only 50% of the HST is a recoverable ITC; the non-creditable
+    # half stays on the expense so total = net + ITC still holds.
+    pdf = b"%PDF-1.4\n%%EOF\n"
+    r = seeded.post(
+        "/api/receipts",
+        data={
+            "receipt_date": f"{Y}-03-06",
+            "vendor": "The Keg",
+            "total": "113.00",
+            "expense_account": "Expenses:MealsEntertainment",
+            "paid_from": "Liabilities:Current:CreditCard",
+        },
+        files={"file": ("meal.pdf", io.BytesIO(pdf), "application/pdf")},
+    )
+    assert r.status_code == 201, r.text
+    rc = r.json()
+    assert Decimal(rc["hst"]) == Decimal("6.50")
+    assert Decimal(rc["net"]) == Decimal("106.50")
+    assert Decimal(rc["net"]) + Decimal(rc["hst"]) == Decimal(rc["total"])
+    assert seeded.get("/api/health").json()["ledger_errors"] == []
+
+
 def test_receipt_bad_type_rejected(seeded):
     r = seeded.post(
         "/api/receipts",

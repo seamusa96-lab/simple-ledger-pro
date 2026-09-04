@@ -6,6 +6,25 @@ import { useAsync } from '../useAsync'
 type Line = { account: string; debit: string; credit: string }
 const blank = (): Line => ({ account: '', debit: '', credit: '' })
 
+// Parse a money string to integer cents exactly, without going through the
+// floating-point Number type (which loses precision past 2^53 cents / rounds
+// values like 0.1). Returns 0 for blank/invalid input.
+const toCents = (s: string): bigint => {
+  const m = s.trim().match(/^-?\d*(?:\.\d{0,})?$/)
+  if (!m || s.trim() === '' || s.trim() === '-') return 0n
+  const neg = s.trim().startsWith('-')
+  const [whole, frac = ''] = s.trim().replace('-', '').split('.')
+  const cents = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2).padEnd(2, '0'))
+  return neg ? -cents : cents
+}
+
+// Render integer cents back to a fixed 2-decimal string for the API / display.
+const centsToStr = (c: bigint): string => {
+  const neg = c < 0n
+  const abs = neg ? -c : c
+  return `${neg ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`
+}
+
 export function JournalPage() {
   const accounts = useAsync(api.accounts)
   const txns = useAsync(() => api.transactions({ limit: '200' }))
@@ -21,9 +40,9 @@ export function JournalPage() {
   const [catHst, setCatHst] = useState(true)
 
   const totals = useMemo(() => {
-    const d = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0)
-    const c = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0)
-    return { d, c, ok: Math.abs(d - c) < 0.005 && d > 0 }
+    const d = lines.reduce((s, l) => s + toCents(l.debit), 0n)
+    const c = lines.reduce((s, l) => s + toCents(l.credit), 0n)
+    return { d: centsToStr(d), c: centsToStr(c), diff: centsToStr(d > c ? d - c : c - d), ok: d === c && d > 0n }
   }, [lines])
 
   const setLine = (i: number, patch: Partial<Line>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)))
@@ -37,7 +56,7 @@ export function JournalPage() {
         narration,
         postings: lines
           .filter((l) => l.account)
-          .map((l) => ({ account: l.account, amount: (Number(l.debit) || 0) - (Number(l.credit) || 0) })),
+          .map((l) => ({ account: l.account, amount: centsToStr(toCents(l.debit) - toCents(l.credit)) })),
       })
       setMsg({ kind: 'ok', text: 'Journal entry posted.' })
       setPayee('')
@@ -113,7 +132,7 @@ export function JournalPage() {
           ))}
         </div>
         <div className={`balance-check ${totals.ok ? 'ok' : 'bad'}`}>
-          Debits {money(totals.d)} · Credits {money(totals.c)} · {totals.ok ? 'Balanced' : `Out of balance by ${money(Math.abs(totals.d - totals.c))}`}
+          Debits {money(totals.d)} · Credits {money(totals.c)} · {totals.ok ? 'Balanced' : `Out of balance by ${money(totals.diff)}`}
         </div>
         <div className="row">
           <div className="shrink"><button type="button" className="btn secondary" onClick={() => setLines([...lines, blank()])}>Add line</button></div>
